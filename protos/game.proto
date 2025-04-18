@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package game;
+
+// Service for managing Kung‑Fu Chess games
+service GameService {
+  // Player joins or creates a game
+  rpc JoinGame(JoinRequest) returns (JoinResponse);
+
+  // Player makes a move
+  rpc MakeMove(MoveRequest) returns (MoveResponse);
+
+  // Stream continuous updates of the game state
+  rpc StreamGameState(StreamRequest) returns (stream GameState);
+}
+
+// --------------------
+// Messages 
+// --------------------
+
+// Request to join a game
+message JoinRequest {
+  string player_id = 1;
+  string game_id   = 2;
+}
+
+// Response after attempting to join
+message JoinResponse {
+  bool   success = 1;
+  string game_id = 2;
+  string message = 3;
+}
+
+// Request to make a move
+message MoveRequest {
+  string player_id = 1;
+  string game_id   = 2;
+  string piece     = 3; // e.g., "Knight", "Pawn"
+  string from_pos  = 4; // e.g., "e2"
+  string to_pos    = 5; // e.g., "e4"
+}
+
+// Response after a move
+message MoveResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+// Request to start streaming game state updates
+message StreamRequest {
+  string game_id = 1;
+}
+
+// Snapshot of the current game state
+message GameState {
+  string             game_id   = 1;
+  string             board     = 2; // JSON-encoded board layout
+  map<string, int64> cooldowns = 3; // piece → cooldown expiry (epoch ms)
+  string             status    = 4; // "ongoing", "checkmate", or "stalemate"
+  string             winner    = 5; // player_id of the winner (if any)
+}

@@ -1,0 +1,4 @@
+node_modules/
+.env
+kungfu_chess.db
+dist/
