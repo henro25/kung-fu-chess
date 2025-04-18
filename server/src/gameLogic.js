@@ -6,9 +6,11 @@ const crypto = require('crypto');
 function parsePos(pos) {
   return { c: pos.charCodeAt(0) - 97, r: parseInt(pos[1], 10) - 1 };
 }
+
 function encodePos(c, r) {
   return String.fromCharCode(97 + c) + (r + 1);
 }
+
 function buildPath(from, to) {
   const A = parsePos(from), B = parsePos(to);
   const dc = Math.sign(B.c - A.c), dr = Math.sign(B.r - A.r);
@@ -19,6 +21,7 @@ function buildPath(from, to) {
   }
   return path;
 }
+
 function clearPath(board, from, to) {
   const mid = buildPath(from, to).slice(0, -1);
   return mid.every(p => !board[p]);
@@ -44,21 +47,25 @@ function initState(mode) {
   const cfg = mode === 'lightning'
     ? { speed: 5, cooldown: 200 }
     : { speed: 1, cooldown: 2000 };
+
   return {
     board: initBoard(),
     players: [],
-    cooldowns: {},    // square → timestamp
-    enPassant: null,  // target square for en passant
+    cooldowns: {},      // square → timestamp
+    enPassant: null,    // target square for en passant
     castlingRights: {
-      whiteKing: true,
-      whiteQueen: true,
-      blackKing: true,
-      blackQueen: true
+      whiteKing: true, whiteQueen: true,
+      blackKing: true, blackQueen: true
     },
     mode,
     cfg,
     status: 'waiting',
-    winner: null
+    winner: null,
+    lobby: {
+      playerSettings: {},   // { [playerId]: { name } }
+      ready: {},            // { [playerId]: boolean }
+      cooldown: cfg.cooldown
+    }
   };
 }
 
@@ -77,19 +84,17 @@ function validateBasic(from, to, st, playerColor) {
 
   switch (pc[1]) {
     case 'P': {
-      const dir = color === 'white' ? 1 : -1;
-      // straight
+      const dir = playerColor === 'white' ? 1 : -1;
       if (dc === 0) {
         if (dr === dir && !b[to]) break;
         if (
           dr === 2*dir &&
-          ((A.r===1&&color==='white')||(A.r===6&&color==='black')) &&
+          ((A.r===1&&playerColor==='white')||(A.r===6&&playerColor==='black')) &&
           !b[to] &&
           !b[encodePos(A.c, A.r + dir)]
         ) break;
         return false;
       }
-      // diagonal capture or en passant
       if (absC===1 && dr===dir && (b[to] || to === st.enPassant)) break;
       return false;
     }
@@ -100,17 +105,16 @@ function validateBasic(from, to, st, playerColor) {
       if (absC!==absR || !clearPath(b, from, to)) return false;
       break;
     case 'R':
-      if (!( (dc===0||dr===0) && clearPath(b, from, to) )) return false;
+      if (!((dc===0||dr===0) && clearPath(b, from, to))) return false;
       break;
     case 'Q':
       if (!(((dc===0||dr===0)||absC===absR) && clearPath(b,from,to))) return false;
       break;
     case 'K': {
       if (Math.max(absC,absR)===1) break;
-      // castling attempt
       if (dr===0 && absC===2) {
-        const rank = color==='white'?'1':'8';
-        const rights = color==='white'
+        const rank = playerColor==='white'?'1':'8';
+        const rights = playerColor==='white'
           ? st.castlingRights.whiteKing && st.castlingRights.whiteQueen
           : st.castlingRights.blackKing && st.castlingRights.blackQueen;
         if (!rights) return false;
@@ -138,184 +142,219 @@ function joinOrCreate(db, playerId, gameId, mode='standard') {
       const newId = crypto.randomBytes(3).toString('hex');
       const st = initState(mode);
       st.players = [playerId];
+      st.lobby.playerSettings[playerId] = { name: 'Player 1' };
       db.run(
         `INSERT INTO games (id, player1_id, state) VALUES(?,?,?)`,
         [newId, playerId, JSON.stringify(st)],
-        err => err ? rej(err) : res({gameId:newId,success:true})
+        err => err ? rej(err) : res({ gameId: newId, success: true })
       );
     } else {
       db.get(
-        `SELECT player1_id,player2_id,state FROM games WHERE id=?`,
+        `SELECT player1_id, player2_id, state FROM games WHERE id=?`,
         [gameId],
-        (e,row) => {
+        (e, row) => {
           if (e) return rej(e);
-          if (!row) return res({gameId,success:false,message:'Not found'});
+          if (!row) return res({ gameId, success: false, message: 'Not found' });
           const st = JSON.parse(row.state);
           if (!st.players.includes(playerId)) {
-            if (st.players.length<2) st.players.push(playerId);
-            else return res({gameId,success:false,message:'Full'});
+            if (st.players.length < 2) {
+              st.players.push(playerId);
+              st.lobby.playerSettings[playerId] = { name: 'Player 2' };
+            } else {
+              return res({ gameId, success: false, message: 'Full' });
+            }
           }
-          st.status = st.players.length===2?'ongoing':'waiting';
-          const upd = st.players.length===2
-            ? `UPDATE games SET state=?,player2_id=? WHERE id=?`
+          const sql = st.players.length === 2
+            ? `UPDATE games SET state=?, player2_id=? WHERE id=?`
             : `UPDATE games SET state=? WHERE id=?`;
-          const args = st.players.length===2
-            ? [JSON.stringify(st), st.players[1], gameId]
+          const args = st.players.length === 2
+            ? [JSON.stringify(st), playerId, gameId]
             : [JSON.stringify(st), gameId];
-          db.run(upd, args, err2=>err2?rej(err2):res({gameId,success:true}));
+          db.run(sql, args, err2 => err2 ? rej(err2) : res({ gameId, success: true }));
         }
       );
     }
   });
 }
 
-// ─── MakeMove (snap,& cooldown & special rules & king‐capture) ───────────
+// ─── MakeMove ─────────────────────────────────────────────────────────────
 
 function makeMove(db, playerId, gameId, from, to) {
   return new Promise((res, rej) => {
-    db.get(
-      `SELECT player1_id,player2_id,state FROM games WHERE id=?`,
-      [gameId],
-      (e,row) => {
-        if (e) return rej(e);
-        if (!row) return res({success:false,message:'Game not found'});
-        const st = JSON.parse(row.state);
-        if (st.status==='ended') return res({success:false,message:'Game over'});
+    db.get(`SELECT state FROM games WHERE id=?`, [gameId], (e, row) => {
+      if (e) return rej(e);
+      if (!row) return res({ success: false, message: 'Game not found' });
 
-        const color = row.player1_id===playerId
-          ? 'white'
-          : row.player2_id===playerId
-          ? 'black'
-          : null;
-        if (!color) return res({success:false,message:'Not in game'});
-        if (!validateBasic(from,to,st,color)) {
-          return res({success:false,message:'Invalid or cooling down'});
+      const st = JSON.parse(row.state);
+      if (st.status === 'ended') {
+        return res({ success: false, message: 'Game over' });
+      }
+
+      // derive playerColor from the piece’s prefix
+      const piece = st.board[from];
+      if (!piece) {
+        return res({ success: false, message: 'No piece at source' });
+      }
+      const playerColor = piece[0] === 'w' ? 'white' : 'black';
+
+      if (!validateBasic(from, to, st, playerColor)) {
+        return res({ success: false, message: 'Invalid or cooling down' });
+      }
+
+      const A = parsePos(from), B = parsePos(to);
+      const dc = B.c - A.c;
+      let didKillKing = false;
+
+      // === Castling ===
+      if (piece[1]==='K' && Math.abs(dc)===2) {
+        const rank = playerColor==='white'?'1':'8';
+        delete st.board[from];
+        st.board[to] = piece;
+
+        let rookFrom, rookTo;
+        if (dc===2) { rookFrom='h'+rank; rookTo='f'+rank; }
+        else          { rookFrom='a'+rank; rookTo='d'+rank; }
+
+        delete st.board[rookFrom];
+        st.board[rookTo] = (playerColor==='white'?'w':'b')+'R';
+
+        if (playerColor==='white') {
+          st.castlingRights.whiteKing = false;
+          st.castlingRights.whiteQueen = false;
+        } else {
+          st.castlingRights.blackKing = false;
+          st.castlingRights.blackQueen = false;
         }
 
-        const piece = st.board[from];
-        const A = parsePos(from), B = parsePos(to);
-        const dc = B.c - A.c;
+        const readyAt = Date.now() + st.cfg.cooldown;
+        st.cooldowns[to]     = readyAt;
+        st.cooldowns[rookTo] = readyAt;
 
-        // track if a capture kills the king
-        let didKillKing = false;
-
-        // === Castling ===
-        if (piece[1]==='K' && Math.abs(dc)===2) {
-          const rank = color==='white'?'1':'8';
-          delete st.board[from];
-          st.board[to] = piece;
-
-          // rook side
-          let rookFrom, rookTo;
-          if (dc===2) {
-            rookFrom = 'h'+rank;
-            rookTo   = 'f'+rank;
-          } else {
-            rookFrom = 'a'+rank;
-            rookTo   = 'd'+rank;
+      } else {
+        // === En passant capture ===
+        if (piece[1]==='P' && to===st.enPassant && !st.board[to]) {
+          const dir = playerColor==='white'? -1:1;
+          const cap = encodePos(B.c, B.r+dir);
+          if (st.board[cap] && st.board[cap][1]==='K') {
+            didKillKing = true;
           }
-          // move rook
-          if (st.board[rookTo] && st.board[rookTo][1]==='K') {
-            // impossible, but just in case
-          }
-          delete st.board[rookFrom];
-          st.board[rookTo] = (color==='white'?'w':'b')+'R';
+          delete st.board[cap];
+        }
+        // normal capture or king capture
+        if (st.board[to] && st.board[to][1]==='K') {
+          didKillKing = true;
+        }
 
-          // revoke rights
-          if (color==='white') {
+        // move & promotion
+        delete st.board[from];
+        st.board[to] = piece;
+        if (
+          piece[1]==='P' &&
+          ((playerColor==='white'&&to[1]==='8')||(playerColor==='black'&&to[1]==='1'))
+        ) {
+          st.board[to] = (playerColor==='white'?'w':'b')+'Q';
+        }
+
+        // revoke castling rights if needed
+        if (piece[1]==='K') {
+          if (playerColor==='white') {
             st.castlingRights.whiteKing = false;
             st.castlingRights.whiteQueen = false;
           } else {
             st.castlingRights.blackKing = false;
             st.castlingRights.blackQueen = false;
           }
-
-          // cooldown both
-          const readyAt = Date.now() + st.cfg.cooldown;
-          st.cooldowns[to] = readyAt;
-          st.cooldowns[rookTo] = readyAt;
-        } else {
-          // === en passant capture ===
-          if (piece[1]==='P' && to===st.enPassant && !st.board[to]) {
-            const dir = color==='white'? -1:1;
-            const cap = encodePos(B.c, B.r+dir);
-            // if that was a king (impossible) handle, else remove
-            if (st.board[cap] && st.board[cap][1]==='K') {
-              didKillKing = true;
-            }
-            delete st.board[cap];
+        }
+        if (piece[1]==='R') {
+          const f = from[0], rnk = from[1];
+          if (playerColor==='white'&&rnk==='1') {
+            if (f==='a') st.castlingRights.whiteQueen = false;
+            if (f==='h') st.castlingRights.whiteKing  = false;
           }
-          // normal destination capture
-          if (st.board[to] && st.board[to][1]==='K') {
-            didKillKing = true;
+          if (playerColor==='black'&&rnk==='8') {
+            if (f==='a') st.castlingRights.blackQueen = false;
+            if (f==='h') st.castlingRights.blackKing  = false;
           }
-
-          // move & promotion
-          delete st.board[from];
-          st.board[to] = piece;
-          if (
-            piece[1]==='P' &&
-            ((color==='white'&&to[1]==='8')||(color==='black'&&to[1]==='1'))
-          ) {
-            st.board[to] = (color==='white'?'w':'b')+'Q';
-          }
-
-          // revoke castling rights if needed
-          if (piece[1]==='K') {
-            if (color==='white') {
-              st.castlingRights.whiteKing = false;
-              st.castlingRights.whiteQueen = false;
-            } else {
-              st.castlingRights.blackKing = false;
-              st.castlingRights.blackQueen = false;
-            }
-          }
-          if (piece[1]==='R') {
-            const f = from[0], rnk = from[1];
-            if (color==='white'&&rnk==='1') {
-              if (f==='a') st.castlingRights.whiteQueen = false;
-              if (f==='h') st.castlingRights.whiteKing = false;
-            }
-            if (color==='black'&&rnk==='8') {
-              if (f==='a') st.castlingRights.blackQueen = false;
-              if (f==='h') st.castlingRights.blackKing = false;
-            }
-          }
-
-          // set en passant target
-          st.enPassant = null;
-          if (piece[1]==='P' && Math.abs(B.r-A.r)===2) {
-            const mid = A.r + Math.sign(B.r-A.r);
-            st.enPassant = encodePos(A.c, mid);
-          }
-
-          // cooldown on to
-          st.cooldowns[to] = Date.now() + st.cfg.cooldown;
         }
 
-        // if the king was captured, end the game
-        if (didKillKing) {
-          st.status = 'ended';
-          st.winner = playerId;
+        // set en passant
+        st.enPassant = null;
+        if (piece[1]==='P' && Math.abs(B.r-A.r)===2) {
+          const mid = A.r + Math.sign(B.r-A.r);
+          st.enPassant = encodePos(A.c, mid);
         }
 
-        // save
-        db.run(
-          `UPDATE games SET state=? WHERE id=?`,
-          [JSON.stringify(st), gameId],
-          err2 => err2?rej(err2):res({success:true})
-        );
+        // apply cooldown
+        st.cooldowns[to] = Date.now() + st.cfg.cooldown;
       }
-    );
+
+      if (didKillKing) {
+        st.status = 'ended';
+        st.winner = playerId;
+      }
+
+      // save updated state
+      db.run(
+        `UPDATE games SET state=? WHERE id=?`,
+        [JSON.stringify(st), gameId],
+        err2 => err2 ? rej(err2) : res({ success: true })
+      );
+    });
+  });
+}
+
+// ─── updateLobby ─────────────────────────────────────────────────────────
+
+function updateLobby(db, playerId, gameId, settings) {
+  return new Promise((res, rej) => {
+    db.get(`SELECT state FROM games WHERE id=?`, [gameId], (e, row) => {
+      if (e) return rej(e);
+      const st = JSON.parse(row.state);
+      st.lobby.playerSettings[playerId].name = settings.name;
+      st.lobby.cooldown = settings.cooldown;
+      st.cfg.cooldown    = settings.cooldown;
+      db.run(
+        `UPDATE games SET state=? WHERE id=?`,
+        [JSON.stringify(st), gameId],
+        err => err ? rej(err) : res({ success: true })
+      );
+    });
+  });
+}
+
+// ─── setReady ────────────────────────────────────────────────────────────
+
+function setReady(db, playerId, gameId, ready) {
+  return new Promise((res, rej) => {
+    db.get(`SELECT state FROM games WHERE id=?`, [gameId], (e, row) => {
+      if (e) return rej(e);
+      const st = JSON.parse(row.state);
+      st.lobby.ready[playerId] = ready;
+      if (
+        st.players.length === 2 &&
+        st.players.every(pid => st.lobby.ready[pid] === true)
+      ) {
+        st.status = 'ongoing';
+      }
+      db.run(
+        `UPDATE games SET state=? WHERE id=?`,
+        [JSON.stringify(st), gameId],
+        err => err ? rej(err) : res({ success: true })
+      );
+    });
   });
 }
 
 // ─── Tick updater (unused) ────────────────────────────────────────────────
 
-function tick(_state) {}
+function tick(_state) {
+  // no-op
+}
 
 module.exports = {
   joinOrCreate,
   makeMove,
+  updateLobby,
+  setReady,
   tick
 };

@@ -41,3 +41,23 @@ export async function makeMove(playerId, gameId, from, to) {
   if (!resp.ok) throw new Error('Failed to make move');
   return resp.json();
 }
+
+export async function updateLobby(playerId, gameId, settings) {
+  const resp = await fetch(`${BASE}/api/lobby`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ playerId, gameId, settings })
+  });
+  if (!resp.ok) throw new Error('Failed to update lobby');
+  return resp.json();
+}
+
+export async function setReady(playerId, gameId, ready) {
+  const resp = await fetch(`${BASE}/api/ready`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ playerId, gameId, ready })
+  });
+  if (!resp.ok) throw new Error('Failed to set ready');
+  return resp.json();
+}

@@ -1,26 +1,46 @@
-// client/src/App.jsx
 import React, { useState, useEffect } from 'react';
 import StartScreen from './components/StartScreen.jsx';
+import LobbyScreen from './components/LobbyScreen.jsx';
 import GameScreen from './components/GameScreen.jsx';
 import EndScreen from './components/EndScreen.jsx';
-import { getGameState } from './api';
+import { getGameState, updateLobby, setReady } from './api';
 
-const App = () => {
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false);
+  const handleClick = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button
+      onClick={handleClick}
+      className="px-2 py-1 border rounded hover:bg-gray-100 text-sm"
+    >
+      {copied ? 'Copied!' : 'Copy'}
+    </button>
+  );
+}
+
+export default function App() {
   const [screen, setScreen]       = useState('start');
   const [gameId, setGameId]       = useState(null);
   const [playerId]                = useState(Math.random().toString(36).substring(2));
   const [gameState, setGameState] = useState(null);
   const [error, setError]         = useState(null);
 
-  // Poll state every 300ms
   useEffect(() => {
     let interval;
-    if ((screen === 'waiting' || screen === 'game') && gameId) {
+    if (['waiting','lobby','game'].includes(screen) && gameId) {
       interval = setInterval(async () => {
         try {
           const state = await getGameState(gameId);
           setGameState(state);
+
           if (screen === 'waiting' && state.players.length === 2) {
+            setScreen('lobby');
+          }
+          if (screen === 'lobby' && state.status === 'ongoing') {
             setScreen('game');
           }
           if (state.status === 'ended') {
@@ -37,9 +57,27 @@ const App = () => {
     return () => clearInterval(interval);
   }, [screen, gameId]);
 
-  const handleJoin = (newId) => {
+  const handleJoin = newId => {
     setGameId(newId);
     setScreen('waiting');
+  };
+
+  const updateLobbySettings = async settings => {
+    try {
+      await updateLobby(playerId, gameId, settings);
+    } catch (e) {
+      console.error('Lobby update failed:', e);
+      setError(e.message);
+    }
+  };
+
+  const toggleReady = async ready => {
+    try {
+      await setReady(playerId, gameId, ready);
+    } catch (e) {
+      console.error('Set ready failed:', e);
+      setError(e.message);
+    }
   };
 
   if (error) {
@@ -57,6 +95,9 @@ const App = () => {
       </div>
     );
   }
+
+  const winnerName =
+    gameState?.lobby?.playerSettings?.[gameState.winner]?.name;
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4">
@@ -84,6 +125,15 @@ const App = () => {
         </div>
       )}
 
+      {screen === 'lobby' && (
+        <LobbyScreen
+          gameState={gameState}
+          playerId={playerId}
+          onUpdateSettings={updateLobbySettings}
+          onReadyToggle={toggleReady}
+        />
+      )}
+
       {screen === 'game' && (
         <GameScreen
           gameState={gameState}
@@ -93,27 +143,8 @@ const App = () => {
       )}
 
       {screen === 'end' && (
-        <EndScreen winner={gameState?.winner} />
+        <EndScreen winnerName={winnerName} />
       )}
     </div>
   );
-};
-
-function CopyButton({ text }) {
-  const [copied, setCopied] = useState(false);
-  const onClick = () => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-  return (
-    <button
-      onClick={onClick}
-      className="px-2 py-1 border rounded hover:bg-gray-100"
-    >
-      {copied ? 'Copied!' : 'Copy'}
-    </button>
-  );
 }
-
-export default App;
