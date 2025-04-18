@@ -1,39 +1,34 @@
 // client/src/components/StartScreen.jsx
 
 import React, { useState } from 'react';
-import { joinGame } from '../grpc/gameClient';
+import { createGame, joinGame } from '../api';
 
 export default function StartScreen({ playerId, onJoin }) {
   const [gameIdInput, setGameIdInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const createGame = async () => {
+  const handleCreate = async () => {
     setError(null);
     setLoading(true);
     try {
-      const { game_id, success, message } = await joinGame(playerId, '');
-      if (!success) throw new Error(message);
-      onJoin(game_id);
+      const newId = await createGame(playerId);
+      onJoin(newId);
     } catch (e) {
-      setError(e.message);
+      setError(e.message || 'Failed to create game');
       setLoading(false);
     }
   };
 
-  const joinExisting = async () => {
+  const handleJoin = async () => {
     if (!gameIdInput.trim()) return;
     setError(null);
     setLoading(true);
     try {
-      const { game_id, success, message } = await joinGame(
-        playerId,
-        gameIdInput.trim()
-      );
-      if (!success) throw new Error(message);
-      onJoin(game_id);
+      const joined = await joinGame(playerId, gameIdInput.trim());
+      onJoin(joined);
     } catch (e) {
-      setError(e.message);
+      setError(e.message || 'Failed to join game');
       setLoading(false);
     }
   };
@@ -53,7 +48,7 @@ export default function StartScreen({ playerId, onJoin }) {
 
         <div className="flex flex-col space-y-4">
           <button
-            onClick={createGame}
+            onClick={handleCreate}
             disabled={loading}
             className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-medium rounded-lg transition"
           >
@@ -74,9 +69,9 @@ export default function StartScreen({ playerId, onJoin }) {
           />
 
           <button
-            onClick={joinExisting}
+            onClick={handleJoin}
             disabled={loading || !gameIdInput.trim()}
-            className="w-full py-3 bg-white border border-indigo-600 text-indigo-600 hover:bg-indigo-50 font-medium rounded-lg transition"
+            className="w-full py-3 bg-white border border-indigo-600 text-indigo-600 hover:bg-indigo-50 font-medium rounded-lg transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {loading ? 'Joining…' : 'Join Game'}
           </button>

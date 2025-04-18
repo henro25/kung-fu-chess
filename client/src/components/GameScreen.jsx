@@ -1,57 +1,29 @@
-// client/src/components/GameScreen.jsx
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo } from 'react';
 import Chessboard from './Chessboard.jsx';
-import { makeMove } from '../grpc/gameClient';
+import { makeMove } from '../api';
 
 export default function GameScreen({ gameState, playerId, gameId }) {
-  const [localBoard, setLocalBoard] = useState({});
-  const [cooldowns, setCooldowns]   = useState({});
-  const [turn, setTurn]             = useState(null);
-  const prevBoardRef = useRef({});
+  // determine your color: first joiner = white, second = black
+  const players = gameState?.players || [];
+  const playerColor = useMemo(() => {
+    if (players[0] === playerId) return 'white';
+    if (players[1] === playerId) return 'black';
+    return null;
+  }, [players, playerId]);
 
-  // Sync incoming board
-  useEffect(() => {
-    if (gameState && typeof gameState.board === 'object') {
-      setLocalBoard(gameState.board);
-      prevBoardRef.current = gameState.board;
-    }
-    setCooldowns(gameState?.cooldowns || {});
-    setTurn(gameState?.turn);
-  }, [gameState]);
-
-  const handleMove = async (piece, from, to) => {
-    const oldBoard = { ...localBoard };
-
-    // Optimistically apply
-    const newBoard = { ...oldBoard, [to]: piece };
-    delete newBoard[from];
-    setLocalBoard(newBoard);
-
-    try {
-      const { success, message } = await makeMove(
-        playerId,
-        gameId,    // ← use the real gameId
-        piece,
-        from,
-        to
-      );
-      if (!success) throw new Error(message);
-    } catch (err) {
-      console.warn('Move rejected:', err.message);
-      // Snap back on invalid
-      setLocalBoard(oldBoard);
-    }
+  // ask server to move; returns { success }
+  const handleMove = (piece, from, to) => {
+    return makeMove(playerId, gameId, from, to);
   };
 
   return (
     <div className="bg-white p-4 rounded-lg shadow-lg">
       <Chessboard
-        board={localBoard}
-        cooldowns={cooldowns}
+        board={gameState.board || {}}
+        cooldowns={gameState.cooldowns || {}}
+        cfg={gameState.cfg}
         onMove={handleMove}
-        playerColor={playerId === gameState.player1Id ? 'white' : 'black'}
-        turn={turn}
+        playerColor={playerColor}
       />
     </div>
   );

@@ -1,96 +1,68 @@
 // server/src/server.js
-
-const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
 const express = require('express');
-const cors = require('cors');
+const sqlite3 = require('sqlite3').verbose();
 const bodyParser = require('body-parser');
-
-const { joinOrCreate, makeMove } = require('./gameLogic');
+const cors = require('cors');
+const { joinOrCreate, makeMove, tick } = require('./gameLogic');
 
 const app = express();
-app.use(cors({ origin: '*' }));
+app.use(cors({origin:'*'}));
 app.use(bodyParser.json());
 
-// ─── SQLite setup ─────────────────────────────────────────────────
-const db = new sqlite3.Database(
-  process.env.DB_PATH || './kungfu_chess.db',
-  err => {
-    if (err) console.error('DB error:', err);
-  }
-);
-db.serialize(() => {
+const db = new sqlite3.Database('./kungfu.db',e=>e&&console.error(e));
+db.serialize(()=>{
   db.run(`
     CREATE TABLE IF NOT EXISTS games (
       id TEXT PRIMARY KEY,
       player1_id TEXT,
       player2_id TEXT,
-      state TEXT,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-  db.run(`
-    CREATE TABLE IF NOT EXISTS moves (
-      game_id TEXT,
-      player_id TEXT,
-      piece TEXT,
-      from_pos TEXT,
-      to_pos TEXT,
-      timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+      state TEXT
+    )`);
 });
 
-// ─── REST: create / join ────────────────────────────────────────────────
-app.post('/api/join', async (req, res) => {
-  const { playerId, gameId } = req.body;
-  try {
-    const result = await joinOrCreate(db, playerId, gameId);
-    return res.json({ game_id: result.gameId, success: result.success, message: result.message });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: e.message });
-  }
+// REST endpoints
+app.post('/api/join',(req,res)=>{
+  const { playerId, gameId, mode } = req.body;
+  joinOrCreate(db,playerId,gameId,mode)
+    .then(r=>res.json(r)).catch(e=>res.status(500).json({error:e.message}));
+});
+app.post('/api/move',(req,res)=>{
+  const { playerId, gameId, from, to } = req.body;
+  makeMove(db,playerId,gameId,from,to)
+    .then(r=>res.json(r)).catch(e=>res.status(500).json({error:e.message}));
+});
+app.get('/api/state/:id',(req,res)=>{
+  db.get(`SELECT state FROM games WHERE id=?`,[req.params.id],(e,row)=>{
+    if(e) return res.status(500).json({error:e.message});
+    if(!row) return res.status(404).json({error:'Not found'});
+    res.json(JSON.parse(row.state));
+  });
 });
 
-// ─── REST: make move ────────────────────────────────────────────────────
-app.post('/api/move', async (req, res) => {
-  const { playerId, gameId, piece, fromPos, toPos } = req.body;
-  try {
-    const result = await makeMove(db, playerId, gameId, fromPos, toPos);
-    return res.json(result);
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: e.message });
-  }
-});
+const PORT=8000;
+app.listen(PORT,()=>console.log(`Listening ${PORT}`));
 
-// ─── REST: get state + metadata ────────────────────────────────────────
-app.get('/api/state/:gameId', (req, res) => {
-  const id = req.params.gameId;
-  db.get(
-    `SELECT player1_id, player2_id, state FROM games WHERE id = ?`,
-    [id],
-    (err, row) => {
-      if (err) return res.status(500).json({ error: err.message });
-      if (!row) return res.status(404).json({ error: 'Game not found' });
-      let stateObj;
-      try {
-        stateObj = JSON.parse(row.state);
-      } catch {
-        return res.status(500).json({ error: 'Corrupt state' });
-      }
-      res.json({
-        ...stateObj,
-        hasOpponent: !!row.player2_id,
-        player1Id: row.player1_id,
-        player2Id: row.player2_id,
+// Periodic tick: now using db.all instead of db.get
+setInterval(() => {
+  db.all(
+    `SELECT id, state FROM games`,
+    [],
+    (err, rows) => {
+      if (err) return console.error(err);
+      // rows is now an array
+      rows.forEach(r => {
+        const st = JSON.parse(r.state);
+        if (st.status === 'ongoing' || st.status === 'waiting') {
+          tick(st);
+          db.run(
+            `UPDATE games SET state = ? WHERE id = ?`,
+            [JSON.stringify(st), r.id],
+            (e) => {
+              if (e) console.error('Failed to save tick:', e);
+            }
+          );
+        }
       });
     }
   );
-});
-
-const PORT = process.env.HTTP_PORT || 8000;
-app.listen(PORT, () => {
-  console.log(`REST server listening on http://localhost:${PORT}`);
-});
+}, 300);

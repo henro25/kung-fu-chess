@@ -44,7 +44,7 @@ Kung-Fu Chess is a real-time, multiplayer chess variant where players can move p
    cd client
    npm start
    ```
-3. Open `http://localhost:3000` in two browser windows to simulate two players.
+3. Open `http://localhost:3000` in one browser window and open `http://localhost:3001` in another browser window to simulate two players.
 
 ## Game Flow
 - **Start Screen**: Waits for another player to join.

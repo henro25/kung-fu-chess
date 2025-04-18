@@ -1,19 +1,18 @@
 // client/src/App.jsx
-
 import React, { useState, useEffect } from 'react';
 import StartScreen from './components/StartScreen.jsx';
 import GameScreen from './components/GameScreen.jsx';
 import EndScreen from './components/EndScreen.jsx';
-import { getGameState } from './grpc/gameClient';
+import { getGameState } from './api';
 
 const App = () => {
   const [screen, setScreen]       = useState('start');
   const [gameId, setGameId]       = useState(null);
-  const [playerId]                = useState(Math.random().toString(36).slice(2));
+  const [playerId]                = useState(Math.random().toString(36).substring(2));
   const [gameState, setGameState] = useState(null);
   const [error, setError]         = useState(null);
 
-  // Poll every 300ms for minimal lag
+  // Poll state every 300ms
   useEffect(() => {
     let interval;
     if ((screen === 'waiting' || screen === 'game') && gameId) {
@@ -21,10 +20,10 @@ const App = () => {
         try {
           const state = await getGameState(gameId);
           setGameState(state);
-          if (screen === 'waiting' && state.hasOpponent) {
+          if (screen === 'waiting' && state.players.length === 2) {
             setScreen('game');
           }
-          if (state.status === 'checkmate' || state.status === 'stalemate') {
+          if (state.status === 'ended') {
             setScreen('end');
             clearInterval(interval);
           }
