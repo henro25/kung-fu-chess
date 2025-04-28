@@ -22,11 +22,11 @@ export default function LobbyScreen({
   const [name, setName]         = useState('');
   const [cooldown, setCooldown] = useState(lobby.cooldown / 1000);
 
-  // Sync server→form for name
+  // Initialize name from server once
   useEffect(() => {
-    const incoming = lobby.playerSettings[playerId] || {};
-    if (incoming.name && incoming.name !== name) {
-      setName(incoming.name);
+    const incomingName = lobby.playerSettings[playerId]?.name;
+    if (name === '' && incomingName) {
+      setName(incomingName);
     }
   }, [lobby.playerSettings]);
 
@@ -39,8 +39,7 @@ export default function LobbyScreen({
   // Push any change back
   useEffect(() => {
     onUpdateSettings({
-      name: name.trim() || fallbackName,
-      // we no longer send color
+      name: name.trim(),
       cooldown: cooldown * 1000
     });
   }, [name, cooldown, onUpdateSettings]);

@@ -177,6 +177,77 @@ function joinOrCreate(db, playerId, gameId, mode='standard') {
   });
 }
 
+function applyCreateOrJoin(db, playerId, gameId, mode) {
+  return new Promise((res, rej) => {
+    // First check if the game exists
+    db.get(`SELECT state FROM games WHERE id=?`, [gameId], (e, row) => {
+      if (e) return rej(e);
+
+      if (!row) {
+        // Game doesn't exist, create new game
+        const st = initState(mode);
+        st.players = [playerId];
+        st.lobby.playerSettings[playerId] = { name: 'Player 1' };
+        db.run(
+          `INSERT INTO games (id, player1_id, state) VALUES (?, ?, ?)`,
+          [gameId, playerId, JSON.stringify(st)],
+          err => {
+            if (err && err.code === 'SQLITE_CONSTRAINT') {
+              // If we get a constraint error, the game was created concurrently
+              // Try to join it instead
+              db.get(`SELECT state FROM games WHERE id=?`, [gameId], (e2, row2) => {
+                if (e2) return rej(e2);
+                if (!row2) return rej(new Error('Race condition: game disappeared'));
+                
+                const st2 = JSON.parse(row2.state);
+                if (!st2.players.includes(playerId)) {
+                  if (st2.players.length < 2) {
+                    st2.players.push(playerId);
+                    st2.lobby.playerSettings[playerId] = { name: 'Player 2' };
+                    db.run(
+                      `UPDATE games SET state=?, player2_id=? WHERE id=?`,
+                      [JSON.stringify(st2), playerId, gameId],
+                      err2 => err2 ? rej(err2) : res({ gameId, success: true })
+                    );
+                  } else {
+                    res({ gameId, success: false, message: 'Game is full' });
+                  }
+                } else {
+                  // Player already in game
+                  res({ gameId, success: true });
+                }
+              });
+            } else if (err) {
+              rej(err);
+            } else {
+              res({ gameId, success: true });
+            }
+          }
+        );
+      } else {
+        // Game exists, try to join it
+        const st = JSON.parse(row.state);
+        if (!st.players.includes(playerId)) {
+          if (st.players.length < 2) {
+            st.players.push(playerId);
+            st.lobby.playerSettings[playerId] = { name: 'Player 2' };
+            db.run(
+              `UPDATE games SET state=?, player2_id=? WHERE id=?`,
+              [JSON.stringify(st), playerId, gameId],
+              err => err ? rej(err) : res({ gameId, success: true })
+            );
+          } else {
+            res({ gameId, success: false, message: 'Game is full' });
+          }
+        } else {
+          // Player already in game
+          res({ gameId, success: true });
+        }
+      }
+    });
+  });
+}
+
 // ─── MakeMove ─────────────────────────────────────────────────────────────
 
 function makeMove(db, playerId, gameId, from, to) {
@@ -190,7 +261,7 @@ function makeMove(db, playerId, gameId, from, to) {
         return res({ success: false, message: 'Game over' });
       }
 
-      // derive playerColor from the piece’s prefix
+      // derive playerColor from the piece's prefix
       const piece = st.board[from];
       if (!piece) {
         return res({ success: false, message: 'No piece at source' });
@@ -356,5 +427,6 @@ module.exports = {
   makeMove,
   updateLobby,
   setReady,
-  tick
+  tick, 
+  applyCreateOrJoin  
 };

@@ -12,21 +12,21 @@ function useImageSrc(src) {
   return img;
 }
 
-// board‐pos → canvas x,y
-function toXY(pos, whiteBottom, size=50) {
-  const file = pos.charCodeAt(0)-97;
-  const rank = parseInt(pos[1],10)-1;
-  const c = whiteBottom ? file : 7-file;
-  const r = whiteBottom ? 7-rank : rank;
-  return { x:c*size, y:r*size };
+// board-pos → canvas x,y
+function toXY(pos, whiteBottom, size = 50) {
+  const file = pos.charCodeAt(0) - 97;
+  const rank = parseInt(pos[1], 10) - 1;
+  const c = whiteBottom ? file : 7 - file;
+  const r = whiteBottom ? 7 - rank : rank;
+  return { x: c * size, y: r * size };
 }
 
 // drop coords → board pos
 function encodePos(col, row, whiteBottom) {
   if (whiteBottom) {
-    return String.fromCharCode(97+col)+(8-row);
+    return String.fromCharCode(97 + col) + (8 - row);
   } else {
-    return String.fromCharCode(97+(7-col))+(row+1);
+    return String.fromCharCode(97 + (7 - col)) + (row + 1);
   }
 }
 
@@ -38,31 +38,31 @@ export default function Chessboard({
   playerColor
 }) {
   const size = 50;
-  const whiteBottom = playerColor==='white';
+  const whiteBottom = playerColor === 'white';
 
   // draw the board
   const squares = [];
-  for (let r=0; r<8; r++) {
-    for (let c=0; c<8; c++) {
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
       squares.push(
         <Rect
           key={`${r}-${c}`}
-          x={c*size} y={r*size}
+          x={c * size} y={r * size}
           width={size} height={size}
-          fill={(r+c)%2? '#769656':'#eeeed2'}
+          fill={(r + c) % 2 ? '#769656' : '#eeeed2'}
         />
       );
     }
   }
 
   // draw pieces
-  const pieces = Object.entries(board).map(([pos,piece]) => (
+  const pieces = Object.entries(board).map(([pos, piece]) => (
     <PieceSprite
       key={pos}
       pos={pos}
       piece={piece}
       size={size}
-      cooldownEnd={cooldowns[pos]||0}
+      cooldownEnd={cooldowns[pos] || 0}
       cooldownDuration={cfg.cooldown}
       whiteBottom={whiteBottom}
       onMove={onMove}
@@ -71,7 +71,7 @@ export default function Chessboard({
   ));
 
   return (
-    <Stage width={8*size} height={8*size}>
+    <Stage width={8 * size} height={8 * size}>
       <Layer>
         {squares}
         {pieces}
@@ -92,29 +92,30 @@ function PieceSprite({
 }) {
   const img = useImageSrc(`/images/${piece}.png`);
   const { x, y } = toXY(pos, whiteBottom, size);
-  const color = piece[0]==='w' ? 'white':'black';
-  const canDrag = img && color===playerColor;
+  const color = piece[0] === 'w' ? 'white' : 'black';
 
   const now = Date.now();
   const ready = now >= cooldownEnd;
-  const rem = Math.max(0,cooldownEnd-now);
+  const rem = Math.max(0, cooldownEnd - now);
   const frac = rem / cooldownDuration;
 
-  // 100% opacity if ready, 30% if cooling
+  // Only pieces of your color and off cooldown are draggable
+  const canDrag = img && color === playerColor && ready;
+
   const opacity = ready ? 1 : 0.3;
 
   const handleDragEnd = async e => {
-    const newC = Math.round(e.target.x()/size);
-    const newR = Math.round(e.target.y()/size);
-    const to = encodePos(newC,newR,whiteBottom);
+    const newC = Math.round(e.target.x() / size);
+    const newR = Math.round(e.target.y() / size);
+    const to = encodePos(newC, newR, whiteBottom);
 
-    const result = await onMove(piece,pos,to);
+    const result = await onMove(piece, pos, to);
     if (!result?.success) {
       // snap back if invalid
-      e.target.position({ x,y });
+      e.target.position({ x, y });
     } else {
-      // on success, jump directly
-      e.target.position(toXY(to,whiteBottom,size));
+      // on success, move to new coords
+      e.target.position(toXY(to, whiteBottom, size));
     }
   };
 
@@ -128,9 +129,9 @@ function PieceSprite({
         opacity={opacity}
         draggable={canDrag}
         onDragEnd={handleDragEnd}
-        dragBoundFunc={p=>({
-          x: Math.max(0,Math.min(p.x,7*size)),
-          y: Math.max(0,Math.min(p.y,7*size))
+        dragBoundFunc={p => ({
+          x: Math.max(0, Math.min(p.x, 7 * size)),
+          y: Math.max(0, Math.min(p.y, 7 * size))
         })}
       />
       {!ready && (

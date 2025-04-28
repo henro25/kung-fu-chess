@@ -9,7 +9,7 @@ Kung-Fu Chess is a real-time, multiplayer chess variant where players can move p
 ## Setup
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/kungfu-chess.git
+   git clone https://github.com/henro25/kungfu-chess.git
    cd kungfu-chess
    ```
 2. Install server dependencies:
@@ -26,12 +26,20 @@ Kung-Fu Chess is a real-time, multiplayer chess variant where players can move p
    ```bash
    npm run proto:generate
    ```
+5. Install raft dependencies:
+   ```bash
+   npm install node-fetch express sqlite3 events
+   ```
 5. Set up environment variables:
    - Create a `.env` file in `server/` with:
      ```
      PORT=50051
      DB_PATH=./kungfu_chess.db
      ```
+   - Create a `.env` file in `client/` with:
+      ```
+      REACT_APP_API_URLS=http://localhost:8000,http://localhost:8001,http://localhost:8002,http://localhost:8003,http://localhost:8004
+      ```
 
 ## Running the Application
 1. Start the server:
