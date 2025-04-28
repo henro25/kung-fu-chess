@@ -1,6 +1,6 @@
 // client/src/api.js
 
-const BASE = 'http://localhost:8000';
+const BASE = 'http://10.250.121.33:8000';
 
 export async function createGame(playerId, mode = 'standard') {
   const resp = await fetch(`${BASE}/api/join`, {
