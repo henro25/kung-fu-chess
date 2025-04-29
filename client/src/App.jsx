@@ -52,7 +52,7 @@ export default function App() {
           setError(e.message);
           clearInterval(interval);
         }
-      }, 300);
+      }, 100);
     }
     return () => clearInterval(interval);
   }, [screen, gameId]);
@@ -137,6 +137,7 @@ export default function App() {
       {screen === 'game' && (
         <GameScreen
           gameState={gameState}
+          setGameState={setGameState}
           playerId={playerId}
           gameId={gameId}
         />

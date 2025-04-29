@@ -37,6 +37,11 @@ export default function Chessboard({
   onMove,
   playerColor
 }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => tick(n => n + 1), 100);
+    return () => clearInterval(iv);
+  }, []);
   const size = 50;
   const whiteBottom = playerColor === 'white';
 

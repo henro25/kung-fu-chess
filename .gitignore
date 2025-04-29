@@ -2,3 +2,4 @@ node_modules/
 .env
 kungfu_chess.db
 dist/
+kungfu-node*.db*

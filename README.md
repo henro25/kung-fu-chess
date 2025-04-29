@@ -40,6 +40,10 @@ Kung-Fu Chess is a real-time, multiplayer chess variant where players can move p
       ```
       REACT_APP_API_URLS=http://localhost:8000,http://localhost:8001,http://localhost:8002,http://localhost:8003,http://localhost:8004
       ```
+6. In `server/` run:
+   ```
+   rm -r kungfu-node*.db*
+   ```
 
 ## Running the Application
 1. Start the server:

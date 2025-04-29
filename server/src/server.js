@@ -71,7 +71,7 @@ app.post('/api/join', (req, res) => {
   .catch(err => {
     console.error(`[${process.env.NODE_ID}] Propose error:`, err.message);
     const leader = extractLeader(err);
-    if (leader) {
+    if (leader && leader !== process.env.NODE_ID) {
       const redirectTo = leader + req.originalUrl;
       console.log(`[${process.env.NODE_ID}] Redirecting to leader URL: ${redirectTo}`);
       return res.status(307).set('Location', redirectTo).json({ leader: redirectTo });
@@ -93,7 +93,7 @@ app.post('/api/lobby', (req, res) => {
     .catch(err => {
       console.error(`[${process.env.NODE_ID}] /api/lobby ERROR →`, err.message);
       const leader = extractLeader(err);
-      if (leader) {
+      if (leader && leader !== process.env.NODE_ID) {
         // Build the full redirect URL, preserving the original path
         const redirectTo = leader + req.originalUrl;
         console.log(`[${process.env.NODE_ID}] Redirecting to leader URL: ${redirectTo}`);
@@ -116,7 +116,7 @@ app.post('/api/ready', (req, res) => {
     .catch(err => {
       console.error(`[${process.env.NODE_ID}] /api/ready ERROR →`, err.message);
       const leader = extractLeader(err);
-      if (leader) {
+      if (leader && leader !== process.env.NODE_ID) {
         const redirectTo = leader + req.originalUrl;
         console.log(`[${process.env.NODE_ID}] Redirecting to leader URL: ${redirectTo}`);
         return res.status(307).set('Location', redirectTo).json({ leader: redirectTo });
@@ -131,14 +131,17 @@ app.post('/api/move', (req, res) => {
   console.log(`[${process.env.NODE_ID}] POST /api/move`, req.body);
   const { playerId, gameId, from, to } = req.body;
   raft.propose({ type: 'move', args: { playerId, gameId, from, to } })
-    .then(result => {
-      console.log(`[${process.env.NODE_ID}] /api/move →`, result);
-      res.json(result);
+    .then(async _ => {
+      gamesDb.get(`SELECT state FROM games WHERE id=?`, [gameId], (e, row) => {
+        if (e) return res.status(500).json({ error: e.message });
+        const st = JSON.parse(row.state);
+        res.json({ success: true, state: st });
+      });
     })
     .catch(err => {
       console.error(`[${process.env.NODE_ID}] /api/move ERROR →`, err.message);
       const leader = extractLeader(err);
-      if (leader) {
+      if (leader && leader !== process.env.NODE_ID) {
         const redirectTo = leader + req.originalUrl;
         console.log(`[${process.env.NODE_ID}] Redirecting to leader URL: ${redirectTo}`);
         return res.status(307).set('Location', redirectTo).json({ leader: redirectTo });
@@ -183,4 +186,4 @@ setInterval(() => {
       }
     });
   });
-}, 300);
+}, 100);

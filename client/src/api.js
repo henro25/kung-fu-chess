@@ -92,7 +92,7 @@ export async function makeMove(playerId, gameId, from, to) {
     console.error('makeMove: success=false', data);
     throw new Error(data.message || 'Move failed');
   }
-  return data;
+  return data.state;
 }
 
 export async function updateLobby(playerId, gameId, settings) {

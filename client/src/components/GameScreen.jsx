@@ -2,7 +2,7 @@ import React from 'react';
 import Chessboard from './Chessboard.jsx';
 import { makeMove } from '../api';
 
-export default function GameScreen({ gameState, playerId, gameId }) {
+export default function GameScreen({ gameState, setGameState, playerId, gameId }) {
   const { players, lobby } = gameState;
   const settings = lobby.playerSettings || {};
 
@@ -17,8 +17,14 @@ export default function GameScreen({ gameState, playerId, gameId }) {
   const playerColor = playerId === whitePlayerId ? 'white' : 'black';
 
   // Send move to server
-  const handleMove = (piece, from, to) =>
-    makeMove(playerId, gameId, from, to);
+  // const handleMove = (piece, from, to) =>
+  const handleMove = async (piece, from, to) =>
+    // makeMove(playerId, gameId, from, to);
+    { 
+      const newState = await makeMove(playerId, gameId, from, to);
+      setGameState(newState);   
+      return { success: true };
+    };
 
   return (
     <div className="bg-white p-4 rounded-lg shadow-lg">
