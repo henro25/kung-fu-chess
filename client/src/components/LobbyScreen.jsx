@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import debounce from 'lodash.debounce';
 
 export default function LobbyScreen({
   gameState,
@@ -16,33 +17,58 @@ export default function LobbyScreen({
   const myIndex      = players.indexOf(playerId);
   const fallbackName = `Player ${myIndex + 1}`;
 
-  const meSettings = lobby.playerSettings[playerId] || {};
-
-  // Local form state for name & cooldown only
-  const [name, setName]         = useState('');
+  // Local state
+  const [name, setName] = useState(lobby.playerSettings[playerId]?.name || fallbackName);
   const [cooldown, setCooldown] = useState(lobby.cooldown / 1000);
+  const editing = useRef(false);
 
-  // Initialize name from server once
+  // Mirror server name → local when not editing
   useEffect(() => {
-    const incomingName = lobby.playerSettings[playerId]?.name;
-    if (name === '' && incomingName) {
-      setName(incomingName);
+    if (!editing.current) {
+      const incoming = lobby.playerSettings[playerId]?.name || fallbackName;
+      if (incoming !== name) {
+        setName(incoming);
+      }
     }
-  }, [lobby.playerSettings]);
+  }, [lobby.playerSettings[playerId]?.name, fallbackName, name]);
 
-  // Sync server→form for cooldown
+  // Mirror server cooldown → local
   useEffect(() => {
     const secs = lobby.cooldown / 1000;
-    if (secs !== cooldown) setCooldown(secs);
-  }, [lobby.cooldown]);
+    if (!editing.current && secs !== cooldown) {
+      setCooldown(secs);
+    }
+  }, [lobby.cooldown, cooldown]);
 
-  // Push any change back
-  useEffect(() => {
-    onUpdateSettings({
-      name: name.trim(),
-      cooldown: cooldown * 1000
-    });
-  }, [name, cooldown, onUpdateSettings]);
+  // Debounced update to server for every keystroke
+  const debouncedUpdate = useCallback(
+    debounce((newName, newCd) => {
+      onUpdateSettings({ name: newName.trim(), cooldown: newCd * 1000 });
+    }, 300),
+    [onUpdateSettings]
+  );
+
+  // Handlers
+  const handleNameChange = e => {
+    const v = e.target.value;
+    setName(v);
+    debouncedUpdate(v, cooldown);
+  };
+
+  const handleCooldownChange = e => {
+    const v = parseFloat(e.target.value) || 0;
+    setCooldown(v);
+    debouncedUpdate(name, v);
+  };
+
+  const handleBlur = () => {
+    editing.current = false;
+    onUpdateSettings({ name: name.trim(), cooldown: cooldown * 1000 });
+  };
+
+  const handleFocus = () => {
+    editing.current = true;
+  };
 
   const ready = !!lobby.ready[playerId];
 
@@ -57,8 +83,10 @@ export default function LobbyScreen({
           <input
             className="w-full border px-2 py-1"
             value={name}
-            onChange={e => setName(e.target.value)}
             placeholder={fallbackName}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            onChange={handleNameChange}
           />
         </div>
 
@@ -71,7 +99,9 @@ export default function LobbyScreen({
             min={0.5}
             step={0.5}
             value={cooldown}
-            onChange={e => setCooldown(parseFloat(e.target.value))}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            onChange={handleCooldownChange}
           />
         </div>
 

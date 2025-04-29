@@ -2,3 +2,7 @@ node_modules/
 .env
 kungfu_chess.db
 dist/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

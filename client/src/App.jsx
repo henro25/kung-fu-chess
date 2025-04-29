@@ -36,8 +36,10 @@ export default function App() {
         try {
           const state = await getGameState(gameId);
           setGameState(state);
-
-          if (screen === 'waiting' && state.players.length === 2) {
+          // only enter lobby once both players AND both playerSettings exist
+          if (screen === 'waiting' && state.players.length === 2 &&
+            Object.keys(state.lobby?.playerSettings || {}).length === 2
+          ) {
             setScreen('lobby');
           }
           if (screen === 'lobby' && state.status === 'ongoing') {

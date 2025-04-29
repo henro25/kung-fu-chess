@@ -12,9 +12,12 @@ class RaftNode extends EventEmitter {
   constructor({ id, peers, dbPath, raftPort, gamesDb }) {
     super();
     this.id = id;
-    this.peers = peers;
     this.dbPath = dbPath;
     this.raftPort = raftPort;
+    this.peers = peers.filter(p => {
+      const peerPort = Number(p.split(':')[1]);
+      return peerPort !== this.raftPort;
+    });
     this.currentTerm = 0;
     this.votedFor = null;
     this.log = [];
@@ -127,7 +130,8 @@ class RaftNode extends EventEmitter {
     this.votedFor = this.id;
     this._persistState();
 
-    const votesNeeded = Math.floor(this.peers.length / 2) + 1;
+    const total = this.peers.length + 1;
+    const votesNeeded = Math.floor(total / 2) + 1;
     const lastLog = this.log[this.log.length - 1] || { term: 0 };
 
     // Send vote requests to all peers with timeout
@@ -179,9 +183,10 @@ class RaftNode extends EventEmitter {
       }
       
       const grantedVotes = results.filter(granted => granted).length;
-      console.log(`[${this.id}] Received ${grantedVotes} votes out of ${votesNeeded} needed`);
+      const votes = 1 + grantedVotes;
+      console.log(`[${this.id}] Received ${votes} votes out of ${votesNeeded} needed`);
       
-      if (grantedVotes >= votesNeeded) {
+      if (votes >= votesNeeded) {
         console.log(`[${this.id}] Won election with ${grantedVotes} votes`);
         this._becomeLeader();
       } else {
@@ -204,7 +209,6 @@ class RaftNode extends EventEmitter {
       this.nextIndex[peer] = this.log.length + 1;
       this.matchIndex[peer] = 0;
     });
-
     // Start sending heartbeats
     this._sendHeartbeat();
     this.heartbeatTimer = setInterval(() => this._sendHeartbeat(), 100);
@@ -243,103 +247,90 @@ class RaftNode extends EventEmitter {
    * Propose a new command to the Raft cluster
    * @param {{ type: string, args: any }} command
    */
-  propose(command) {
+  async propose(command) {
     console.log(`[${this.id}] propose() called; state=${this.state}; peers=${this.peers.length}`);
     if (this.state !== 'leader') {
-      console.log(`[${this.id}] propose(): not leader, rejecting`);
       return Promise.reject(new Error(`Not leader ${this.leaderId}`));
     }
-
-    return new Promise((resolve, reject) => {
-      const term   = this.currentTerm;
-      const cmd    = { type: command.type, args: command.args };
-      const cmdStr = JSON.stringify(cmd);
-
-      // Step 1: append to local log
+  
+    const term = this.currentTerm;
+    const cmd = { type: command.type, args: command.args };
+    const cmdStr = JSON.stringify(cmd);
+  
+    // Step 1: append to local SQLite log
+    await new Promise((resolve, reject) => {
       this.db.run(
         `INSERT INTO raft_log(term,command) VALUES(?,?)`,
         [term, cmdStr],
-        err => {
-          if (err) {
-            console.error(`[${this.id}] propose(): log append error`, err);
-            return reject(err);
-          }
-
-          // In-memory log
-          const entry = { term, command: cmd };
-          this.log.push(entry);
-          console.log(`[${this.id}] propose(): appended entry idx=${this.log.length}`);
-
-          // Step 2: single-node fast-path
-          if (this.peers.length === 1) {
-            console.log(`[${this.id}] propose(): single-node fast-path`);
-            this.commitIndex = this.log.length;
-            return this._applyEntry(entry)
-              .then(result => {
-                console.log(`[${this.id}] propose(): fast-path applied`, result);
-                resolve(result);
-              })
-              .catch(err => {
-                console.error(`[${this.id}] propose(): fast-path apply error`, err);
-                reject(err);
-              });
-          }
-
-          // Step 3: multi-node replication
-          const N         = this.peers.length;
-          const majority  = Math.floor(N/2) + 1;
-          let acks        = 1;   // self-vote
-          let responses   = 0;
-          let errors      = 0;
-          let committed   = false;
-          const idx          = this.log.length;
-          const prevLogIndex = idx - 1;
-          const prevLogTerm  = this.log[prevLogIndex - 1]?.term || 0;
-
-          console.log(`[${this.id}] propose(): replicating to ${N} peers, need ${majority}`);
-
-          const checkDone = () => {
-            if (!committed && acks >= majority) {
-              committed = true;
-              this.commitIndex = idx;
-              console.log(`[${this.id}] propose(): got majority acks (${acks}), applying entry`);
-              this._applyEntry(entry).then(resolve).catch(reject);
-            } else if (responses + errors === N && !committed) {
-              console.error(`[${this.id}] propose(): failed to reach majority (acks=${acks}, resp+err=${responses+errors})`);
-              reject(new Error('Failed to get majority consensus'));
-            }
-          };
-
-          this.peers.forEach(peer => {
-            fetch(`http://${peer}/append_entries`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                term:         this.currentTerm,
-                leaderId:     this.id,
-                prevLogIndex,
-                prevLogTerm,
-                entries:      [entry],
-                leaderCommit: this.commitIndex
-              }),
-              timeout: 100
-            })
-            .then(r => r.json())
-            .then(res => {
-              responses++;
-              if (res.success) acks++;
-              checkDone();
-            })
-            .catch(err => {
-              errors++;
-              console.warn(`[${this.id}] propose(): append_entries to ${peer} error`, err.message);
-              checkDone();
-            });
-          });
-        }
+        err => err ? reject(err) : resolve()
       );
     });
+  
+    // In-memory log entry
+    const entry = { term, command: cmd };
+    this.log.push(entry);
+  
+    // Single-node fast path
+    if (this.peers.length === 0) {
+      this.commitIndex = this.log.length;
+      return this._applyEntry(entry);
+    }
+  
+    // Multi-node replication with back-off
+    const N = this.peers.length + 1;
+    const majority = Math.floor((N) / 2) + 1;  // +1 for leader self
+    let acks = 1;  // count self
+    const idx = this.log.length;
+  
+    const replicateTo = async (peer) => {
+      // Retry with decreasing nextIndex on log mismatch
+      while (this.nextIndex[peer] > 0) {
+        const prevLogIndex = this.nextIndex[peer] - 1;
+        const prevLogTerm  = this.log[prevLogIndex - 1]?.term || 0;
+        const entries       = [entry];
+        try {
+          const res = await fetch(`http://${peer}/append_entries`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 100,
+            body: JSON.stringify({
+              term: this.currentTerm,
+              leaderId: this.id,
+              prevLogIndex,
+              prevLogTerm,
+              entries,
+              leaderCommit: this.commitIndex
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            acks++;
+            this.matchIndex[peer] = idx;
+            this.nextIndex[peer]  = idx + 1;
+            break;
+          } else {
+            // Log mismatch → decrement nextIndex and retry
+            this.nextIndex[peer] = prevLogIndex;
+          }
+        } catch (err) {
+          // Network error or timeout → give up on this peer for now
+          break;
+        }
+      }
+    };
+  
+    // Fire off replication to all peers
+    await Promise.all(this.peers.map(replicationPeer => replicateTo(replicationPeer)));
+  
+    // Check majority
+    if (acks >= majority) {
+      this.commitIndex = idx;
+      return this._applyEntry(entry);
+    }
+  
+    throw new Error('Failed to get majority consensus');
   }
+  
 
 
   _applyEntry(entry) {
