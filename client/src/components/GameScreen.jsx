@@ -18,8 +18,14 @@ export default function GameScreen({ gameState, playerId, gameId }) {
   const playerColor = playerId === whitePlayerId ? 'white' : 'black';
 
   // Send move to server
-  const handleMove = (piece, from, to) => {
-    makeMove(playerId, gameId, from, to);
+  const handleMove = async (piece, from, to) => {
+    try {
+      const data = await makeMove(playerId, gameId, from, to);
+      return data;     
+    }
+    catch (err) {
+      return { success: false, message: err.message };
+    }
   };
 
   return (
