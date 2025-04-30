@@ -22,11 +22,11 @@ Kung-Fu Chess is a real-time, multiplayer chess variant where players can move p
    cd ../client
    npm install
    ```
-4. Compile gRPC proto files:
+4. Compile gRPC proto files in `server/`:
    ```bash
    npm run proto:generate
    ```
-5. Install raft dependencies:
+5. Install raft dependencies in `server/`:
    ```bash
    npm install node-fetch express sqlite3 events
    ```
@@ -38,7 +38,7 @@ Kung-Fu Chess is a real-time, multiplayer chess variant where players can move p
      ```
    - Create a `.env` file in `client/` with:
       ```
-      REACT_APP_API_URLS=http://localhost:8000,http://localhost:8001,http://localhost:8002,http://localhost:8003,http://localhost:8004
+      REACT_APP_API_URLS=http://10.250.121.33:8000,http://10.250.121.33:8001,http://10.250.121.33:8002,http://10.250.121.33:8003,http://10.250.121.33:8004
       ```
 
 ## Running the Application

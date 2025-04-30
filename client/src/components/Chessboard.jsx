@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Stage, Layer, Rect, Image, Group } from 'react-konva';
+import { validateBasic } from '../helper';
 
 // Load image once
 function useImageSrc(src) {
