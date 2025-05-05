@@ -230,3 +230,9 @@ The goal is to build a real-time, multiplayer Kung-Fu Chess game as a client-ser
 ## Design Fair & Community Feedback
 - We showcased Kung-Fu Chess at the SEAS Design Fair, where many students and faculty played and enjoyed our game's real-time mechanics and cooldown rules.
 - Hearing enthusiastic feedback and seeing people immersed in our variant was the most fulfilling part of the project.
+
+## What I Learned
+- **Server–Client Protocol**: I gained hands‐on experience designing a browser‐friendly HTTP/REST protocol, building a `raftFetch` wrapper that cycles peers, follows HTTP 307 redirects to the current leader, and retries on failures.
+- **Game State Sharing**: I learned how to persist and share authoritative game state via SQLite JSON blobs, and coordinate client updates through simple polling (300 ms intervals) instead of pushing, ensuring every client sees a consistent view regardless of node failover.
+- **Raft Implementation**: Implementing Raft end‐to‐end deepened my understanding of leader election timeouts, log replication with back‐off on mismatches, commit indices, and state persistence via WAL‐mode SQLite tables, as well as applying entries atomically with `applyCreateOrJoin`, `makeMove`, and friends.
+- **Kung-Fu Chess Side-Step Strategy**: On the gameplay side, I discovered a fun "side-step" tactic—when an opponent attacks your piece, you sidestep with a head start and then instantly recapture the attacker if your timing is right. It adds an extra layer of real-time dynamism to classic chess.
