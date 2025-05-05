@@ -38,7 +38,7 @@ Kung-Fu Chess is a real-time, multiplayer chess variant where players can move p
      ```
    - Create a `.env` file in `client/` with:
       ```
-      REACT_APP_API_URLS=http://10.250.121.33:8000,http://10.250.121.33:8001,http://10.250.121.33:8002,http://10.250.121.33:8003,http://10.250.121.33:8004
+      REACT_APP_API_URLS=http://10.250.30.27:8000,http://10.250.30.27:8001,http://10.250.30.27:8002,http://10.250.30.27:8003,http://10.250.30.27:8004
       ```
 
 ## Running the Application

@@ -165,7 +165,7 @@ app.get('/api/state/:id', (req, res) => {
 
 // start HTTP API
 const PORT = Number(process.env.PORT) || 8000;
-app.listen(PORT, () => console.log(`[${process.env.NODE_ID}] Listening on ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`[${process.env.NODE_ID}] Listening on ${PORT}`));
 
 // optional periodic tick
 setInterval(() => {

@@ -3,9 +3,9 @@ const { spawn } = require('child_process');
 const path = require('path');
 
 const N = 5;
-const BASE_RAFT_PORT = 9000;
+const BASE_RAFT_PORT = 9000; 
 const BASE_HTTP_PORT = 8000;
-const HOST = process.env.HOST_IP || '10.250.121.33';
+const HOST = process.env.HOST_IP || '10.250.30.27';
 // Raft RPC peer list (host:raftPort)
 const peers = Array.from({ length: N }, (_, i) => `localhost:${BASE_RAFT_PORT + i}`).join(',');
 
