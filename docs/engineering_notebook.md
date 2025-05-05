@@ -93,6 +93,14 @@ The goal is to build a real-time, multiplayer Kung-Fu Chess game as a client-ser
    - `JoinGame` & `MakeMove`: wrap `joinOrCreate` and `makeMove` logic.
    - `StreamGameState`: stubbed to immediately `call.end()`; actual client uses REST polling.
 
+## Game Specification
+- Standard 8×8 chessboard with traditional initial piece setup (white on ranks 1–2, black on 7–8).
+- Real-time, Kung-Fu Chess variant: no alternating turns—each player may move any of their available pieces at any time, subject to cooldown.
+- After a move, the moved piece enters a cooldown period (`cfg.cooldown` ms) during which it cannot move again. Cooldowns are visualized as a red bar overlay on the square.
+- Standard chess rules apply for movement, captures, en passant, castling, and pawn promotion, with server-side validation ensuring legality and no collisions.
+- Win occurs when one player captures the opponent's king (immediate end), rather than full checkmate search.
+- Server serializes concurrent move requests via Raft commit order to resolve conflicts and maintain consistency across nodes.
+
 ## Low-Level Plan
 1. **Backend**:
    - Define gRPC service in `protos/game.proto` (currently stubbed; actual calls use REST).
@@ -218,3 +226,7 @@ The goal is to build a real-time, multiplayer Kung-Fu Chess game as a client-ser
 ## Future Work
 - Implement full `tick()` logic for cooldown expiration and other timed effects.
 - Add AI opponents and more robust end-to-end testing.
+
+## Design Fair & Community Feedback
+- We showcased Kung-Fu Chess at the SEAS Design Fair, where many students and faculty played and enjoyed our game's real-time mechanics and cooldown rules.
+- Hearing enthusiastic feedback and seeing people immersed in our variant was the most fulfilling part of the project.
