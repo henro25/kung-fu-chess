@@ -424,9 +424,10 @@ function tick(_state) {
 
 module.exports = {
   joinOrCreate,
+  validateBasic,
   makeMove,
   updateLobby,
   setReady,
   tick, 
-  applyCreateOrJoin  
+  applyCreateOrJoin
 };
